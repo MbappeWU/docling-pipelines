@@ -122,32 +122,12 @@ class LineageService:
         )
         outputs = []
         if context.sink_datasets:
-            for i, (sink_ns, sink_name) in enumerate(context.sink_datasets):
-                table = (
-                    context.output_tables[i]
-                    if i < len(context.output_tables)
-                    else (context.output_tables[0] if context.output_tables else None)
-                )
-                if table is not None:
-                    outputs.append(
-                        self._build_dataset_from_summary(
-                            summary=NodeTableSummary.from_table(table),
-                            name=sink_name,
-                            namespace=sink_ns,
-                        )
-                    )
-        elif context.sink_dataset_name:
-            sink_ns = context.sink_dataset_namespace or self._namespace
-            for i, t in enumerate(context.output_tables):
-                if t is not None:
-                    name = context.sink_dataset_name if i == 0 else f"{context.sink_dataset_name}_{i}"
-                    outputs.append(
-                        self._build_dataset_from_summary(
-                            summary=NodeTableSummary.from_table(t),
-                            name=name,
-                            namespace=sink_ns,
-                        )
-                    )
+            # Each sink carries the summary of its own output, so branching flows with
+            # different sink schemas report the right facets for every sink.
+            outputs = [
+                self._build_dataset_from_summary(summary=sink.summary, name=sink.name, namespace=sink.namespace)
+                for sink in context.sink_datasets
+            ]
         else:
             base_name = context.flow_name or "output"
             outputs = [
@@ -247,8 +227,10 @@ class LineageService:
                         namespace=sink_ns,
                     )
                 )
-        else:
-            outputs = [
+        # A sink with downstream operators passes its table onward. The downstream node's START input is
+        # the in-memory dataset named after this node, so it must also be emitted here or the edge is lost.
+        if not context.sink_dataset_name or context.has_downstream:
+            outputs.extend(
                 self._build_dataset_from_summary(
                     summary=s,
                     name=self._build_node_output_dataset_name(
@@ -259,7 +241,7 @@ class LineageService:
                     namespace=LineageConstants.NAMESPACE_INMEMORY,
                 )
                 for i, s in enumerate(context.output_summaries)
-            ]
+            )
         self._publish(event_type=LineageEventType.COMPLETE, run=run, job=job, outputs=outputs)
 
     def emit_node_fail(self, *, context: NodeFailContext) -> None:

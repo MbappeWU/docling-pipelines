@@ -370,6 +370,8 @@ class LineageConstants:
     NAMESPACE_FILE = "file"
     NAMESPACE_GOOGLE_DRIVE = "googledrive://drive.google.com"
     NAMESPACE_DOCUMENT_SET = "docpipe://document_set"
+    NAMESPACE_DROPBOX = "dropbox://api.dropbox.com"
+    NAMESPACE_MILVUS_LITE = "milvus://lite"
 
     # Known storage & vector providers
     PROVIDER_FILESYSTEM = "filesystem"
@@ -385,6 +387,9 @@ class LineageConstants:
     PROVIDER_BOX = "box"
     PROVIDER_SHAREPOINT = "sharepoint"
     PROVIDER_GOOGLE_DRIVE = "google_drive"
+    PROVIDER_ONEDRIVE = "onedrive"
+    PROVIDER_DROPBOX = "dropbox"
+    PROVIDER_WEB = "web"
 
     # Job and processing types
     JOB_TYPE_FLOW = "FLOW"

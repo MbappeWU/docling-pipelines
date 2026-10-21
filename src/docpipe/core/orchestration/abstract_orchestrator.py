@@ -26,6 +26,7 @@ from docpipe.core.operators.operator_utils import OperatorUtils
 from docpipe.core.orchestration.abstract_operator_executor import AbstractOperatorExecutor
 from docpipe.core.orchestration.batch_manager import BatchManager
 from docpipe.core.orchestration.flow_execution_event_handler import FlowExecutionEventHandler
+from docpipe.core.orchestration.models.execution_event_context import NodeTableSummary, SinkDatasetInfo
 from docpipe.core.orchestration.ports.flow_engine import ExecuteStepResults, FlowEnginePort
 from docpipe.exceptions.docpipe_exceptions import FlowExecutionFailedException
 from docpipe.utils.core.datetime import get_current_timestamp
@@ -104,6 +105,10 @@ class AbstractOrchestrator(ABC):
         # path and setting it to FAILING would short-circuit the batches still running.
         self._failed_batch_nums: set[Any] = set()
         self._failed_batch_lock = threading.Lock()
+        # External sink datasets written by this flow, keyed by (namespace, name). Batches share this
+        # orchestrator, so a sink that runs once per batch is aggregated into a single entry.
+        self.sink_datasets: dict[tuple[str, str], SinkDatasetInfo] = {}
+        self._sink_datasets_lock = threading.Lock()
 
     @property
     def non_recoverable_docs_tables(self) -> list[pa.Table]:
@@ -571,9 +576,7 @@ class AbstractOrchestrator(ABC):
             sink_info = LineageUtils.derive_dataset_info_from_sink(operator_def=op_def)
             sink_ns, sink_name = (sink_info[0], sink_info[1]) if sink_info else (None, None)
             if sink_info:
-                if not hasattr(self, "sink_datasets"):
-                    self.sink_datasets = []
-                self.sink_datasets.append(sink_info)
+                self._record_sink_dataset(namespace=sink_info[0], name=sink_info[1], tables=tables)
 
             end_time = get_current_timestamp()
             predecessor_node_ids = self._resolve_predecessor_names(op_def=op_def)
@@ -594,6 +597,7 @@ class AbstractOrchestrator(ABC):
                     predecessor_node_ids=predecessor_node_ids,
                     sink_dataset_namespace=sink_ns,
                     sink_dataset_name=sink_name,
+                    has_downstream=bool(op_def.get(DocpipeConstants.OUTPUT_EDGES)),
                 ),
             )
 
@@ -601,6 +605,19 @@ class AbstractOrchestrator(ABC):
         self._refresh_job_status()
 
         return ExecuteStepResults(data_accesses, tables, internal_metadata)
+
+    def _record_sink_dataset(self, *, namespace: str, name: str, tables: list[pa.Table | None]) -> None:
+        """Record what a sink wrote, aggregating row counts when the sink runs once per micro-batch."""
+        table = next((t for t in tables if t is not None), None)
+        if table is None:
+            return
+        summary = NodeTableSummary.from_table(table)
+        with self._sink_datasets_lock:
+            existing = self.sink_datasets.get((namespace, name))
+            if existing is None:
+                self.sink_datasets[(namespace, name)] = SinkDatasetInfo(namespace=namespace, name=name, summary=summary)
+            else:
+                existing.summary.row_count += summary.row_count
 
     def __get_tables_from_data_accesses(self, *, executor, data_accesses):
         """Read tables from the data accesses produced by an operator.
@@ -1130,7 +1147,6 @@ class AbstractOrchestrator(ABC):
                             _total = _job.total_docs or 0
                     except Exception as exc:
                         logger.debug("Could not read doc counts for lineage COMPLETE event: %s", exc)
-                sink_datasets = getattr(self, "sink_datasets", [])
                 self._notify_observer(
                     "on_flow_complete",
                     context=FlowCompleteContext(
@@ -1143,9 +1159,7 @@ class AbstractOrchestrator(ABC):
                         if getattr(self, "last_output_table", None) is not None
                         else [],
                         ingest_dataset_name=getattr(self, "ingest_dataset_name", None),
-                        sink_datasets=sink_datasets,
-                        sink_dataset_namespace=sink_datasets[0][0] if sink_datasets else None,
-                        sink_dataset_name=sink_datasets[0][1] if sink_datasets else None,
+                        sink_datasets=list(self.sink_datasets.values()),
                         completed_docs=_completed,
                         failed_docs=_failed,
                         skipped_docs=_skipped,
@@ -1220,6 +1234,10 @@ class AbstractOrchestrator(ABC):
         - Otherwise, entire ingested table is treated as single "batch" for unified execution
 
         """
+
+        # Sinks are collected per flow execution; a reused orchestrator must not carry them over.
+        with self._sink_datasets_lock:
+            self.sink_datasets = {}
 
         # Configure prefect server logging
         _ = get_logger(name="prefect")
