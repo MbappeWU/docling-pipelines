@@ -17,6 +17,7 @@ The operator already provides `adapter.index_exists()` and `adapter.validate_exi
 - Update `VectorDBOperator.transform()` to unconditionally inspect `adapter.index_exists()`:
   - If the index/collection does not exist, call `adapter.create_index(dimension_mapping=...)`.
   - If the index/collection exists, call `adapter.validate_existing_schema(dimension_mapping=...)`.
+- Emit a deprecation warning logger when legacy flow configurations pass `create_index`.
 - Preserve adapter `create_index()` method signatures across Milvus and OpenSearch adapters.
 - Update all sample flow definitions, documentation, and test fixtures to remove `create_index`.
 
@@ -29,10 +30,10 @@ The operator already provides `adapter.index_exists()` and `adapter.validate_exi
 ## Capabilities
 
 ### New Capabilities
-- `backend/vectordb-operator`: Durable specification for `VectorDBOperator` ingestion lifecycle, schema auto-detection, index auto-creation, and schema validation.
+- None
 
 ### Modified Capabilities
-- None
+- `backend/vectordb-operator`: Remove user-configurable `create_index` parameter, making index/collection creation and schema validation automatic and internal.
 
 ## Impact
 

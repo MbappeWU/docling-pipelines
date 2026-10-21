@@ -2,12 +2,12 @@
 
 ## 1. Backend Core Operator & Constants Update
 
-- [ ] 1.1 [backend] Remove `create_index` initialization and conditional check in `VectorDBOperator.transform()`, calling `_ensure_index_ready()` unconditionally, and remove `CREATE_INDEX` from `get_metadata()`. Verify with `pytest tests/unit/operators/vectordb/test_vectordb_operator.py`.
+- [ ] 1.1 [backend] Remove `create_index` initialization and conditional check in `VectorDBOperator.transform()`, calling `_ensure_index_ready()` unconditionally, adding deprecation warning logger when `create_index` is present in config, and remove `CREATE_INDEX` from `get_metadata()`. Verify with `pytest tests/unit/operators/vectordb/test_vectordb_operator.py`.
 - [ ] 1.2 [backend] Remove `CREATE_INDEX = "create_index"` constant from `OperatorConstants.VectorDB` and clean up `config.py` environment mapping helpers. Verify constants imports and usages across codebase.
 
 ## 2. Unit and Integration Test Updates
 
-- [ ] 2.1 [backend] Add unit tests in `tests/unit/operators/vectordb/test_vectordb_operator.py` verifying collection creation when `index_exists()` returns `False` and schema validation when `index_exists()` returns `True`. Verify with `pytest tests/unit/operators/vectordb/test_vectordb_operator.py`.
+- [ ] 2.1 [backend] Add unit tests in `tests/unit/operators/vectordb/test_vectordb_operator.py` verifying collection creation when `index_exists()` returns `False`, schema validation when `index_exists()` returns `True`, and deprecation warning logging when `create_index` is supplied. Verify with `pytest tests/unit/operators/vectordb/test_vectordb_operator.py`.
 - [ ] 2.2 [backend] Remove `create_index` and `CREATE_INDEX` from all unit test configs (`test_vectordb_operator.py`, `test_vectordb_metrics.py`, `test_multi_model_embeddings.py`, `test_config_utils.py`). Verify with `pytest tests/unit/operators/vectordb/`.
 - [ ] 2.3 [backend] Update integration test files (`tests/integration/opensearch/test_opensearch_advanced.py`, `tests/integration/opensearch/test_opensearch_with_container.py`, `tests/integration/test_ingest_extract_chunk_embed_milvus_lite.py`) to remove `create_index` from test configurations. Verify syntax and static analysis.
 

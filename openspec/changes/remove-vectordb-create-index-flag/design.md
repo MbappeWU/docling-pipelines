@@ -9,6 +9,7 @@
 **Goals:**
 - Eliminate user-facing `create_index` flag from `VectorDBOperator` and its metadata parameter schema.
 - Unconditionally invoke `_ensure_index_ready()` inside `transform()` before document batching and insertion.
+- Emit a warning log when legacy configs contain `create_index`.
 - Maintain existing adapter contracts (`OpenSearchAdapter`, `MilvusAdapter`, and `VectorStorePort`).
 - Update sample flows, documentation, and test fixtures to remove `create_index`.
 
@@ -27,9 +28,9 @@
 - **Decision**: Remove `OperatorConstants.VectorDB.CREATE_INDEX = "create_index"`. Clean up `get_opensearch_config()` and `get_milvus_config()` in `src/docpipe/utils/infrastructure/config.py`.
 - **Rationale**: Eliminates dead configuration constants and prevents invalid environment variable mappings from populating operator config.
 
-### 3. Graceful compatibility for legacy flow configs
-- **Decision**: Ignore `"create_index"` if present in user-supplied configuration dictionaries during operator initialization without raising an error.
-- **Rationale**: Prevents breaking existing pipeline JSON files stored externally while removing the attribute from operator schema and sample files.
+### 3. Graceful compatibility for legacy flow configs with warning logging
+- **Decision**: When `create_index` is present in the configuration dictionary passed to `VectorDBOperator.__init__()`, emit a warning logger: `logger.warning("The 'create_index' configuration parameter is deprecated and will be ignored. Index lifecycle is now handled automatically.", extra=self.common_log_arguments)` and proceed normally.
+- **Rationale**: Prevents breaking existing legacy pipeline JSON files stored externally while explicitly alerting users and maintainers that the setting has no effect and should be removed.
 
 ## Risks / Trade-offs
 
@@ -38,7 +39,8 @@
 
 ## Migration Plan
 
-1. Remove `create_index` from operator configuration parsing and `get_metadata()`.
-2. Remove `CREATE_INDEX` constant.
-3. Clean up sample flows, documentation, and tests.
-4. Verify with unit and integration tests.
+1. Create brownfield base specification for `backend/vectordb-operator`.
+2. Remove `create_index` from operator configuration parsing and `get_metadata()`, adding deprecation warning log when present.
+3. Remove `CREATE_INDEX` constant.
+4. Clean up sample flows, documentation, and tests.
+5. Verify with unit and integration tests.
