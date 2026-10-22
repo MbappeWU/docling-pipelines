@@ -1167,7 +1167,8 @@ class AbstractOrchestrator(ABC):
                     ),
                 )
 
-    def _derive_ingest_dataset_info(self, *, ingest_operator: dict) -> tuple[str, str]:
+    @staticmethod
+    def _derive_ingest_dataset_info(*, ingest_operator: dict) -> tuple[str, str]:
         """Derive standard OpenLineage (namespace, name) tuple from the ingest operator config."""
         from docpipe.core.lineage.utils import LineageUtils
 

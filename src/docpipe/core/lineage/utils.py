@@ -136,7 +136,8 @@ class LineageUtils:
         from docpipe.core.constants.constants import LineageConstants
         from docpipe.core.constants.operator_constants import OperatorConstants
 
-        operator_type = operator_def.get(OperatorConstants.Misc.OPERATOR, "")
+        # Compiled DAG nodes carry the kind under "operator"; raw flow JSON uses "type". "operator" wins.
+        operator_type = operator_def.get(OperatorConstants.Misc.OPERATOR) or operator_def.get("type", "")
         config = operator_def.get(OperatorConstants.Config.CONFIG) or {}
         provider = config.get(OperatorConstants.Config.PROVIDER)
 

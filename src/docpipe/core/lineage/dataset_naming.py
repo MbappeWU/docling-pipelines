@@ -21,6 +21,14 @@ _UNKNOWN = "unknown"
 # Dataset name used by the fallback for an unrecognised provider with nothing configured to name it.
 _ROLE_DEFAULT_NAMES: dict[str, str] = {"source": "source", "destination": "output"}
 
+# Provider names the adapters accept for a place another provider already names. Without an alias the name
+# misses every rule and falls to ``_generic_info``, which ignores the config, so all such flows share one ID.
+# - box_driver: the Box source registers as ``box_driver``, the Box destination as ``box``.
+# - ibm_cos: aliased to ``s3`` in both adapter factories. Shares ``s3://{bucket}`` with AWS S3 (``endpoint_url``
+#   is not part of the ID).
+# ``onedrive`` is not mapped to ``sharepoint`` on purpose: it has its own rule and namespace.
+_PROVIDER_ALIASES: dict[str, str] = {"box_driver": "box", "ibm_cos": "s3"}
+
 _Info = tuple[str, str]
 
 
@@ -47,8 +55,11 @@ def _first(*, config: dict[str, Any], keys: tuple[str, ...]) -> Any:
 
 
 def _path_name(*, path: Any) -> str:
-    """Return a dataset name for a folder path or key prefix ("/" when empty)."""
-    text = str(path).rstrip("/") if path else ""
+    """Return a dataset name for a folder/file path or key prefix ("/" when empty).
+
+    A ``file_path`` may be a URL; its query and fragment are dropped because they can hold share tokens.
+    """
+    text = str(path).split("?", 1)[0].split("#", 1)[0].rstrip("/") if path else ""
     return text or "/"
 
 
@@ -74,11 +85,16 @@ def _file_info(*, config: dict[str, Any], role: str | None) -> _Info:
 
 
 def _google_drive_info(*, config: dict[str, Any]) -> _Info:
-    """Google Drive: ``drive_id`` (shared drive) scopes the namespace; ``folder_id`` else ``folder_path`` names it."""
+    """Google Drive: ``drive_id`` scopes the namespace; ``file_id``, else ``folder_id``, else ``folder_path`` names it.
+
+    ``file_id`` comes first because the adapter ignores the folder fields when it is set.
+    """
     from docpipe.core.constants.constants import LineageConstants
 
     base = LineageConstants.NAMESPACE_GOOGLE_DRIVE
     namespace = f"{base}/{config['drive_id']}" if config.get("drive_id") else base
+    if config.get("file_id"):
+        return (namespace, str(config["file_id"]))
     if config.get("folder_id"):
         return (namespace, str(config["folder_id"]))
     if config.get("folder_path"):
@@ -151,22 +167,24 @@ def _rules() -> dict[str, _Rule]:
             namespace_fields={"bucket": (("bucket",), _UNKNOWN)},
         ),
         # Adapters expose no enterprise ID (it is inside the JWT file): fixed host, folder_id makes it unique.
-        C.PROVIDER_BOX: _Rule("box://app.box.com:443/default", name_fields=("folder_id",), default_name="0"),
+        # file_id (single-file ingest) wins over folder_id, as in the adapter.
+        C.PROVIDER_BOX: _Rule("box://app.box.com:443/default", name_fields=("file_id", "folder_id"), default_name="0"),
         # The Microsoft Graph drive ID replaces {site}: document_library_id (source) / drive_id (destination).
+        # file_path (single-file ingest) wins over folder_path for SharePoint, OneDrive and Dropbox.
         C.PROVIDER_SHAREPOINT: _Rule(
             "mssharepoint://graph.microsoft.com:443/{drive}",
-            name_fields=("folder_path",),
+            name_fields=("file_path", "folder_path"),
             is_path=True,
             namespace_fields={"drive": (("drive_id", "document_library_id"), _UNKNOWN)},
         ),
         C.PROVIDER_ONEDRIVE: _Rule(
             "onedrive://graph.microsoft.com:443/{drive}",
-            name_fields=("folder_path",),
+            name_fields=("file_path", "folder_path"),
             is_path=True,
             namespace_fields={"drive": (("drive_id",), _UNKNOWN)},
         ),
         # The config holds no account identifier (only tokens), so accounts cannot be told apart.
-        C.PROVIDER_DROPBOX: _Rule(C.NAMESPACE_DROPBOX, name_fields=("folder_path",), is_path=True),
+        C.PROVIDER_DROPBOX: _Rule(C.NAMESPACE_DROPBOX, name_fields=("file_path", "folder_path"), is_path=True),
         C.PROVIDER_OPENSEARCH: _Rule(
             "opensearch://{host}:{port}",
             name_fields=("index_name",),
@@ -188,7 +206,10 @@ def get_dataset_info(*, dataset_type: str, config: dict[str, Any], role: str | N
     """
     from docpipe.core.constants.constants import LineageConstants as C
 
-    dataset_type = str(_resolve_value(value=dataset_type))
+    # Normalise the provider the way IngestSourceOperator does (``.lower()``, plus ``.strip()`` for stray
+    # whitespace), then apply aliases. Without this, "Box_Driver" or " S3 " would miss every rule below.
+    dataset_type = str(_resolve_value(value=dataset_type)).strip().lower()
+    dataset_type = _PROVIDER_ALIASES.get(dataset_type, dataset_type)
     resolved = _resolve_config(config=config)
 
     info: _Info | None = None

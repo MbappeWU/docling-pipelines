@@ -644,6 +644,92 @@ class TestLineageUtils:
         assert dst == ("azure_blob://destination", "output")
         assert src != dst
 
+    def test_provider_aliases_resolve_like_their_canonical_provider(self) -> None:
+        """The Box source registers as ``box_driver`` and IBM COS aliases ``s3``; both must get a real ID.
+
+        Without the alias they fall through to the generic fallback, which ignores the config and gives one
+        fixed ID per role, so every Box or COS flow would collapse into a single dataset.
+        """
+        box_cfg = {"folder_id": "123"}
+        assert LineageUtils.get_dataset_info(dataset_type="box_driver", config=box_cfg) == (
+            "box://app.box.com:443/default",
+            "123",
+        )
+        assert LineageUtils.get_dataset_info(
+            dataset_type="box_driver", config=box_cfg
+        ) == LineageUtils.get_dataset_info(dataset_type="box", config=box_cfg)
+        assert LineageUtils.get_dataset_info(dataset_type="box_driver", config={"folder_id": "1"}) != (
+            LineageUtils.get_dataset_info(dataset_type="box_driver", config={"folder_id": "2"})
+        )
+
+        cos_source = {"bucket": "b", "prefix": "in/"}
+        cos_sink = {"bucket": "b", "key_prefix": "in/"}
+        assert LineageUtils.get_dataset_info(dataset_type="ibm_cos", config=cos_source) == ("s3://b", "in")
+        assert LineageUtils.get_dataset_info(dataset_type="ibm_cos", config=cos_source) == (
+            LineageUtils.get_dataset_info(dataset_type="ibm_cos", config=cos_sink)
+        )
+
+    def test_box_source_and_destination_name_the_same_folder_identically(self) -> None:
+        """A Box ingest (``box_driver``) and a Box sink (``box``) on one folder must be the same dataset."""
+        ingest = {"config": {"provider": "box_driver", "provider_config": {"folder_id": "42"}}}
+        sink = {
+            "operator": "storage_output",
+            "config": {"destination_config": {"provider": "box", "provider_config": {"folder_id": "42"}}},
+        }
+        assert LineageUtils.derive_dataset_info_from_ingest(
+            ingest_operator=ingest
+        ) == LineageUtils.derive_dataset_info_from_sink(operator_def=sink)
+
+    @pytest.mark.parametrize("provider", ["S3", " s3 ", "Box_Driver", "IBM_COS"])
+    def test_provider_name_is_normalised_like_the_ingest_operator(self, provider: str) -> None:
+        """IngestSourceOperator lower-cases the provider, so mixed case or padding must still hit a rule."""
+        info = LineageUtils.get_dataset_info(dataset_type=provider, config={"bucket": "b", "folder_id": "7"})
+        assert not info[0].endswith("://source")
+        assert info[0].startswith(("s3://", "box://"))
+
+    def test_single_file_ingest_does_not_collapse_to_the_folder_default(self) -> None:
+        """file_id / file_path name the dataset when set, since the adapter then ignores the folder fields."""
+
+        def info(provider: str, config: dict[str, Any]) -> tuple[str, str]:
+            return LineageUtils.get_dataset_info(dataset_type=provider, config=config)
+
+        assert info("box_driver", {"file_id": "9"}) == ("box://app.box.com:443/default", "9")
+        assert info("box_driver", {"file_id": "9", "folder_id": "5"}) == ("box://app.box.com:443/default", "9")
+        assert info("box_driver", {"file_id": "1"}) != info("box_driver", {"file_id": "2"})
+        assert info("google_drive", {"file_id": "f1"})[1] == "f1"
+        assert info("google_drive", {"file_id": "f1", "folder_id": "d"})[1] == "f1"
+        assert info("sharepoint", {"drive_id": "d", "file_path": "/a/x.txt"})[1] == "/a/x.txt"
+        assert info("onedrive", {"drive_id": "d", "file_path": "/a/x.txt"})[1] == "/a/x.txt"
+        assert info("dropbox", {"file_path": "/a/x.txt", "folder_path": "/a"})[1] == "/a/x.txt"
+        # no file set: the folder still names the dataset
+        assert info("dropbox", {"folder_path": "/a"})[1] == "/a"
+
+    def test_file_path_url_query_and_fragment_are_not_kept(self) -> None:
+        """A SharePoint/OneDrive file_path may be a URL; query and fragment can carry share tokens."""
+        _, name = LineageUtils.get_dataset_info(
+            dataset_type="sharepoint",
+            config={"drive_id": "d", "file_path": "https://x.sharepoint.com/a/b.docx?id=1&token=abc#frag"},
+        )
+        assert name == "https://x.sharepoint.com/a/b.docx"
+
+    def test_sink_accepts_raw_flow_json_type_key(self) -> None:
+        """Compiled nodes use ``operator``; raw flow JSON uses ``type``. Both must work, ``operator`` first."""
+        config = {"provider": "opensearch", "provider_config": {"host": "h", "port": 9200, "index_name": "i"}}
+        expected = ("opensearch://h:9200", "i")
+        assert (
+            LineageUtils.derive_dataset_info_from_sink(operator_def={"type": "vectordb", "config": config}) == expected
+        )
+        assert (
+            LineageUtils.derive_dataset_info_from_sink(operator_def={"operator": "vectordb", "config": config})
+            == expected
+        )
+        assert (
+            LineageUtils.derive_dataset_info_from_sink(
+                operator_def={"operator": "vectordb", "type": "noop", "config": config}
+            )
+            == expected
+        )
+
     def test_get_dataset_info_resolves_env_vars_in_dataset_type_and_config(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
