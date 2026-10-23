@@ -133,6 +133,8 @@ class AuthoringOperator:
 
         # Validate that the branch exists in the branching operator
         if referenced_op:
+            if not isinstance(referenced_op.config, dict):
+                return errors
             branches = referenced_op.config.get(OperatorConstants.Misc.BRANCHES, {})
             if branch_name not in branches:
                 available_branches = list(branches.keys())
@@ -147,6 +149,9 @@ class AuthoringOperator:
         """Validate branching operator specific requirements."""
         errors: list[str] = []
         if self.type != OperatorConstants.Operators.BRANCHING:
+            return errors
+
+        if not isinstance(self.config, dict):
             return errors
 
         branches = self.config.get(OperatorConstants.Misc.BRANCHES, {})
