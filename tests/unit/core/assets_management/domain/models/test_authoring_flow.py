@@ -2,7 +2,6 @@
 
 import pytest
 
-from docpipe.core.assets.flows.application.services.authoring_compiler import AuthoringCompiler
 from docpipe.core.assets.flows.domain.models.authoring_flow import (
     AuthoringFlow,
     AuthoringOperator,
@@ -281,7 +280,7 @@ class TestAuthoringFlow:
         )
 
         with pytest.raises(FlowInvalidDataException) as exc_info:
-            AuthoringCompiler().compile(authoring_flow=flow)
+            flow.validate()
 
         assert "config must be a dictionary" in str(exc_info.value)
         assert "operator: b" in str(exc_info.value)
@@ -305,6 +304,31 @@ class TestAuthoringFlow:
         message = str(exc_info.value)
         assert "config must be a dictionary" in message
         assert "operator: b" in message
+
+    def test_branch_reference_to_non_dict_branches_collects_errors(self):
+        """A branch reference when branches is not a dict fails validation without crashing."""
+        flow = AuthoringFlow.from_dict(
+            data={
+                "flow_name": "x",
+                "flow": [
+                    {"type": "ingest_source", "name": "a"},
+                    {
+                        "type": "branching",
+                        "name": "b",
+                        "depends_on": ["a"],
+                        "config": {"branches": ["left", "right"]},
+                    },
+                    {"type": "noop", "name": "c", "depends_on": ["b.left"]},
+                ],
+            }
+        )
+
+        with pytest.raises(FlowInvalidDataException) as exc_info:
+            flow.validate()
+
+        message = str(exc_info.value)
+        assert "branches" in message.lower()
+        assert "dictionary" in message.lower()
 
 
 class TestAuthoringFlowFromDict:

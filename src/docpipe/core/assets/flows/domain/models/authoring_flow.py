@@ -136,6 +136,9 @@ class AuthoringOperator:
             if not isinstance(referenced_op.config, dict):
                 return errors
             branches = referenced_op.config.get(OperatorConstants.Misc.BRANCHES, {})
+            if not isinstance(branches, dict):
+                # Branching-operator validation already reports non-dict branches.
+                return errors
             if branch_name not in branches:
                 available_branches = list(branches.keys())
                 errors.append(
