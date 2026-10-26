@@ -5,6 +5,7 @@ This class provides flexible aggregation of operator-specific metadata
 
 from typing import Any, Callable
 
+from docpipe.core.constants.constants import ExecutionStatus
 from docpipe.core.constants.operator_constants import OperatorConstants
 
 from .strategies import DEFAULT_STRATEGIES, AggregationStrategy
@@ -219,6 +220,9 @@ class MetadataAggregator:
         if strategy == AggregationStrategy.UNION:
             return self._apply_union_strategy(values=values)
 
+        if strategy == AggregationStrategy.INTERSECTION:
+            return self._apply_intersection_strategy(values=values)
+
         if strategy == AggregationStrategy.FIRST:
             return values[0]
 
@@ -230,15 +234,21 @@ class MetadataAggregator:
 
         if strategy == AggregationStrategy.PRIORITY_STATUS:
             status_priority = {
-                "RUNNING": 3,
-                "FAILING": 2,
-                "FAILED": 2,
-                "COMPLETED": 1,
-                "COMPLETED_WITH_ERRORS": 1,
-                "COMPLETED_WITH_WARNINGS": 1,
-                "SKIPPED": 0,
+                self._normalize_status_key(ExecutionStatus.RUNNING.value): 4,
+                self._normalize_status_key(ExecutionStatus.FAILING.value): 3,
+                self._normalize_status_key(ExecutionStatus.FAILED.value): 3,
+                self._normalize_status_key(ExecutionStatus.COMPLETED_WITH_ERRORS.value): 2,
+                self._normalize_status_key(ExecutionStatus.COMPLETED_WITH_WARNINGS.value): 1,
+                self._normalize_status_key(ExecutionStatus.COMPLETED.value): 1,
+                self._normalize_status_key(ExecutionStatus.SKIPPED.value): 0,
+                self._normalize_status_key(ExecutionStatus.CANCELED.value): 0,
+                self._normalize_status_key(ExecutionStatus.PENDING.value): 0,
+                self._normalize_status_key(ExecutionStatus.QUEUED.value): 0,
             }
-            return max(values, key=lambda status: status_priority.get(str(status).upper(), 0))
+            return max(
+                values,
+                key=lambda status: status_priority.get(self._normalize_status_key(status), 0),
+            )
 
         if strategy == AggregationStrategy.CUSTOM:
             return self._apply_custom_strategy(field_name=field_name, values=values)
@@ -258,6 +268,37 @@ class MetadataAggregator:
                         result.append(item)
                         seen.add(item_key)
         return result
+
+    @staticmethod
+    def _normalize_status_key(status: Any) -> str:
+        """Letters only, then upper, so CamelCase and SCREAMING_SNAKE share one key."""
+        return "".join(char for char in str(status) if char.isalpha()).upper()
+
+    @staticmethod
+    def _apply_intersection_strategy(*, values: list[Any]) -> list[Any]:
+        """Items present in every list, in first-list order, without duplicates."""
+        lists = [value for value in values if isinstance(value, list)]
+        if not lists:
+            return []
+
+        shared = {MetadataAggregator._collection_item_key(item) for item in lists[0]}
+        for items in lists[1:]:
+            shared &= {MetadataAggregator._collection_item_key(item) for item in items}
+
+        result: list[Any] = []
+        seen: set[Any] = set()
+        for item in lists[0]:
+            key = MetadataAggregator._collection_item_key(item)
+            if key in shared and key not in seen:
+                result.append(item)
+                seen.add(key)
+        return result
+
+    @staticmethod
+    def _collection_item_key(item: Any) -> Any:
+        if isinstance(item, (str, int, float, bool, type(None))):
+            return item
+        return str(item)
 
     def _deep_merge(self, *, dict1: dict, dict2: dict) -> dict:
         """
