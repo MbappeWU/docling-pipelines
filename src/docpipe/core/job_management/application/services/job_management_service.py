@@ -333,12 +333,12 @@ class JobManagementService:
             list_items.append(item)
 
         # OpenSpec total is every match. A short page already has them all.
-        # A full page may hide later rows, so recount with the existing all-rows cap.
+        # A full page may hide later rows, so count with the same filters and no limit.
         count = len(list_items)
         if count < limit:
             total = count
         else:
-            total = len(self.job_stats_service.list_job_runs(job_id=job_id, status=status, limit=100_000))
+            total = self.job_stats_service.count_job_runs(job_id=job_id, status=status)
 
         return {
             "list": list_items,

@@ -4,6 +4,7 @@ Data Access Layer for JobRunStats model.
 Provides CRUD operations for job-level statistics.
 """
 
+from sqlalchemy.sql.expression import func
 from sqlmodel import select
 
 from docpipe.exceptions.docpipe_exceptions import PostgresOperationException
@@ -125,6 +126,16 @@ class JobStatsDAL:
                 table="job_run_stats",
             ) from e
 
+    def _apply_job_run_filters(self, *, query, job_id: str | None, job_ids: list[str] | None, status: str | None):
+        model = self._dao.model
+        if job_id:
+            query = query.where(model.job_id == job_id)
+        if job_ids:
+            query = query.where(model.job_id.in_(job_ids))  # type: ignore[attr-defined]
+        if status:
+            query = query.where(model.status == status)
+        return query
+
     def list_job_runs(
         self,
         *,
@@ -150,20 +161,52 @@ class JobStatsDAL:
         """
         try:
             model = self._dao.model
-            query = select(model)
-
-            if job_id:
-                query = query.where(model.job_id == job_id)
-            if job_ids:
-                query = query.where(model.job_id.in_(job_ids))  # type: ignore[attr-defined]
-            if status:
-                query = query.where(model.status == status)
-
+            query = self._apply_job_run_filters(query=select(model), job_id=job_id, job_ids=job_ids, status=status)
             query = query.order_by(model.start_time.desc()).limit(limit)  # type: ignore[attr-defined]
 
             return self._dao.get_by_query(query=query)
         except Exception as e:
-            logger.error(f"Failed to list jobs: {e}")
+            logger.error("Failed to list jobs: %s", e)
             raise PostgresOperationException(
                 message=f"Failed to list jobs: {e}", operation="list", table="job_run_stats"
+            ) from e
+
+    def count_job_runs(
+        self,
+        *,
+        job_id: str | None = None,
+        job_ids: list[str] | None = None,
+        status: str | None = None,
+    ) -> int:
+        """
+        Count job runs using the same filters as list_job_runs.
+
+        Args:
+            job_id: Optional filter by a single job_id
+            job_ids: Optional filter by a set of job_ids
+            status: Optional filter by status
+
+        Returns:
+            Number of matching job runs, with no result limit
+
+        Raises:
+            PostgresOperationException: If the count operation fails
+        """
+        try:
+            model = self._dao.model
+            query = self._apply_job_run_filters(
+                query=select(func.count()).select_from(model),
+                job_id=job_id,
+                job_ids=job_ids,
+                status=status,
+            )
+
+            def _read_count(session) -> int:
+                return int(session.execute(query).scalar_one())
+
+            return self._dao.execute_with_session(fn=_read_count)
+        except Exception as e:
+            logger.error("Failed to count jobs: %s", e)
+            raise PostgresOperationException(
+                message=f"Failed to count jobs: {e}", operation="count", table="job_run_stats"
             ) from e

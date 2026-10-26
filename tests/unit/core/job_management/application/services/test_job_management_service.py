@@ -742,29 +742,28 @@ class TestFlowIdentityAPIPath:
         assert result["total"] == 3
         assert len(result["list"]) == 3
         self.job_stats_service.list_job_runs.assert_called_once_with(job_id="flow-1", status=None, limit=10)
+        self.job_stats_service.count_job_runs.assert_not_called()
 
-    def test_list_job_runs_total_comes_from_unlimited_call_when_page_is_full(self):
-        """A full page reads total from the unlimited listing, not the page length."""
+    def test_list_job_runs_total_comes_from_count_when_page_is_full(self):
+        """A full page reads total from count_job_runs, including matches past any list cap."""
         page = [_dummy_run(job_run_id=f"run-{index}") for index in range(5)]
-        every_match = [_dummy_run(job_run_id=f"run-{index}") for index in range(20)]
-
-        def list_by_limit(*, job_id, status, limit):
-            if limit == 100_000:
-                return every_match
-            return page
-
-        self.job_stats_service.list_job_runs.side_effect = list_by_limit
+        self.job_stats_service.list_job_runs.return_value = page
+        self.job_stats_service.count_job_runs.return_value = 100_001
 
         result = self.service.list_job_runs(job_id="flow-1", status=ExecutionStatus.RUNNING, limit=5)
 
         assert result["count"] == 5
-        assert result["total"] == 20
+        assert result["total"] == 100_001
         assert [item[DocpipeConstants.JOB_RUN_ID] for item in result["list"]] == [f"run-{index}" for index in range(5)]
-        assert self.job_stats_service.list_job_runs.call_args_list[1].kwargs == {
-            "job_id": "flow-1",
-            "status": ExecutionStatus.RUNNING,
-            "limit": 100_000,
-        }
+        self.job_stats_service.list_job_runs.assert_called_once_with(
+            job_id="flow-1",
+            status=ExecutionStatus.RUNNING,
+            limit=5,
+        )
+        self.job_stats_service.count_job_runs.assert_called_once_with(
+            job_id="flow-1",
+            status=ExecutionStatus.RUNNING,
+        )
 
 
 def _dummy_run(*, job_run_id: str, job_id: str = "flow-1") -> DummyJobRunItem:
