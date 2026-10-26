@@ -47,7 +47,7 @@ class JobStatsDAL:
         try:
             self._dao.upsert_no_refresh(obj=job_run_stats)
         except Exception as e:
-            logger.error(f"Failed to upsert job run stats: {e}")
+            logger.error("Failed to upsert job run stats: %s", e)
             raise PostgresOperationException(
                 message=f"Failed to upsert job run stats: {e}", operation="upsert", table="job_run_stats"
             ) from e
@@ -68,7 +68,7 @@ class JobStatsDAL:
         try:
             return self._dao.get_by_id(id=job_run_id)
         except Exception as e:
-            logger.error(f"Failed to retrieve job run stats for {job_run_id}: {e}")
+            logger.error("Failed to retrieve job run stats for %s: %s", job_run_id, e)
             raise PostgresOperationException(
                 message=f"Failed to retrieve job run stats for {job_run_id}: {e}",
                 operation="get_by_id",
@@ -91,7 +91,7 @@ class JobStatsDAL:
         try:
             return self._dao.delete_by_query(condition=self._dao.model.job_run_id == job_run_id)
         except Exception as e:
-            logger.error(f"Failed to delete job run stats for {job_run_id}: {e}")
+            logger.error("Failed to delete job run stats for %s: %s", job_run_id, e)
             raise PostgresOperationException(
                 message=f"Failed to delete job run stats for {job_run_id}: {e}",
                 operation="delete",
@@ -119,7 +119,7 @@ class JobStatsDAL:
                 condition=condition, increments=increments, updates=updates, jsonb_merges=jsonb_merges
             )
         except Exception as e:
-            logger.error(f"Failed to atomically increment fields for {job_run_id}: {e}")
+            logger.error("Failed to atomically increment fields for %s: %s", job_run_id, e)
             raise PostgresOperationException(
                 message=f"Failed to atomically increment fields for {job_run_id}: {e}",
                 operation="atomic_increment",
