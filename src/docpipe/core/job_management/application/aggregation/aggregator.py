@@ -160,6 +160,7 @@ class MetadataAggregator:
 
     @staticmethod
     def _apply_concat(values: list[Any]) -> list[Any]:
+        """Concatenate lists and append non-list values."""
         result: list[Any] = []
         for value in values:
             if isinstance(value, list):
@@ -170,6 +171,7 @@ class MetadataAggregator:
 
     @staticmethod
     def _apply_merge_dict(values: list[Any]) -> dict:
+        """Shallow-merge dicts, later keys overwriting earlier ones."""
         result: dict = {}
         for value in values:
             if isinstance(value, dict):
@@ -177,6 +179,7 @@ class MetadataAggregator:
         return result
 
     def _apply_deep_merge(self, values: list[Any]) -> dict:
+        """Deep-merge dict values in order."""
         result: dict = {}
         for value in values:
             if isinstance(value, dict):
@@ -194,12 +197,14 @@ class MetadataAggregator:
 
     @staticmethod
     def _apply_last_completed(values: list[Any]) -> Any:
+        """Return the last truthy value, or the final value if none."""
         for value in reversed(values):
             if value:
                 return value
         return values[-1] if values else None
 
     def _apply_custom_strategy(self, *, field_name: str, values: list[Any]) -> Any:
+        """Apply the registered custom function, or return the last value."""
         custom_func = self.custom_functions.get(field_name)
         return custom_func(values) if custom_func else values[-1]
 
@@ -296,6 +301,7 @@ class MetadataAggregator:
 
     @staticmethod
     def _collection_item_key(item: Any) -> Any:
+        """Return a hashable key for a collection item."""
         if isinstance(item, (str, int, float, bool, type(None))):
             return item
         return str(item)
