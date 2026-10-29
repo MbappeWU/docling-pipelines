@@ -582,6 +582,15 @@ class TestCountJobRuns:
         assert store.count_job_runs(job_id="job-a", status=ExecutionStatus.FAILED) == 2
         assert store.count_job_runs() == 6
 
+    def test_count_job_runs_raises_on_connection_error(self, *, store):
+        from unittest.mock import patch
+
+        from docpipe.exceptions.docpipe_exceptions import JobStatsStoreReadException
+
+        with patch.object(store.connection_manager, "get_connection", side_effect=RuntimeError("no connection")):
+            with pytest.raises(JobStatsStoreReadException, match="Failed to count jobs"):
+                store.count_job_runs()
+
 
 class TestAtomicOperations:
     """Test atomic increment operations."""

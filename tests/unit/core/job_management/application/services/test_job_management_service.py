@@ -765,6 +765,27 @@ class TestFlowIdentityAPIPath:
             status=ExecutionStatus.RUNNING,
         )
 
+    def test_list_job_runs_total_equals_count_when_page_fills_limit(self):
+        """A page that fills the limit still takes total from count_job_runs."""
+        page = [_dummy_run(job_run_id=f"run-{index}") for index in range(5)]
+        self.job_stats_service.list_job_runs.return_value = page
+        self.job_stats_service.count_job_runs.return_value = 5
+
+        result = self.service.list_job_runs(job_id="flow-1", status=ExecutionStatus.RUNNING, limit=5)
+
+        assert result["count"] == 5
+        assert result["total"] == 5
+        assert len(result["list"]) == 5
+        self.job_stats_service.list_job_runs.assert_called_once_with(
+            job_id="flow-1",
+            status=ExecutionStatus.RUNNING,
+            limit=5,
+        )
+        self.job_stats_service.count_job_runs.assert_called_once_with(
+            job_id="flow-1",
+            status=ExecutionStatus.RUNNING,
+        )
+
 
 def _dummy_run(*, job_run_id: str, job_id: str = "flow-1") -> DummyJobRunItem:
     item = DummyJobRunItem(
